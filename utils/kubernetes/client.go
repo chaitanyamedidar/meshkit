@@ -57,6 +57,30 @@ func DetectKubeConfig(configfile []byte) (config *rest.Config, err error) {
 
 // ProcessConfig handles loading, validating, and optionally saving or returning a kubeconfig
 func ProcessConfig(kubeConfig interface{}, outputPath string) (*clientcmdapi.Config, []byte, error) {
+	config, err := loadConfig(kubeConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := clientcmdapi.MinifyConfig(config); err != nil {
+		return nil, nil, ErrValidateConfig(err)
+	}
+
+	return finalizeConfig(config, outputPath)
+}
+
+// ProcessMultiContextConfig loads, validates, and flattens a kubeconfig without
+// minifying it, so callers can inspect or import every context in the file.
+func ProcessMultiContextConfig(kubeConfig interface{}, outputPath string) (*clientcmdapi.Config, []byte, error) {
+	config, err := loadConfig(kubeConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return finalizeConfig(config, outputPath)
+}
+
+func loadConfig(kubeConfig interface{}) (*clientcmdapi.Config, error) {
 	var config *clientcmdapi.Config
 	var err error
 
@@ -67,17 +91,15 @@ func ProcessConfig(kubeConfig interface{}, outputPath string) (*clientcmdapi.Con
 	case []byte:
 		config, err = clientcmd.Load(v)
 	default:
-		return nil, nil, ErrLoadConfig(err)
+		return nil, ErrLoadConfig(err)
 	}
 	if err != nil {
-		return nil, nil, ErrLoadConfig(err)
+		return nil, ErrLoadConfig(err)
 	}
+	return config, nil
+}
 
-	// Validate and Process the Config
-	if err := clientcmdapi.MinifyConfig(config); err != nil {
-		return nil, nil, ErrValidateConfig(err)
-	}
-
+func finalizeConfig(config *clientcmdapi.Config, outputPath string) (*clientcmdapi.Config, []byte, error) {
 	if err := clientcmdapi.FlattenConfig(config); err != nil {
 		return nil, nil, ErrValidateConfig(err)
 	}
